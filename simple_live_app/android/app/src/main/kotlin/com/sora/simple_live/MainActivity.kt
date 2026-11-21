@@ -1,4 +1,4 @@
-package com.xycz.simple_live
+package com.sora.simple_live
 
 import io.flutter.embedding.android.FlutterActivity
 

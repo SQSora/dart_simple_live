@@ -1,5 +1,5 @@
 name: simple_live_app
-version: 1.11.4+11104
+version: 26.11.21+261121
 publish_to: none
 description: "Simple Live APP"
 environment:
@@ -20,7 +20,7 @@ dependencies:
   logger: ^2.6.2 #日志
   intl: ^0.20.2 #国际化
   qr_flutter: ^4.1.0 #二维码生成
-  dynamic_color: ^1.8.1 #动态颜色
+  dynamic_color: 1.8.1 #动态颜色（1.9.0 未应用 Kotlin 插件却使用 kotlin {} 配置）
   path: any
   collection: any
   udp: ^5.0.3 #UDP
@@ -44,7 +44,7 @@ dependencies:
 
   #系统交互
   package_info_plus: ^9.0.0 #包信息
-  device_info_plus: ^12.2.0 #设备信息
+  device_info_plus: 12.3.0 #设备信息（12.4.x 的 iOS 26 SDK API 与当前 Xcode 不兼容）
   url_launcher: ^6.3.2 #打开链接
   share_plus: ^12.0.1 #分享
   path_provider: ^2.1.5 #常用路径
@@ -52,13 +52,13 @@ dependencies:
   permission_handler: ^12.0.1 #权限处理
   image_gallery_saver_plus: ^4.0.1 #图片保存到相册
   screen_brightness: ^2.1.7 #亮度控制
-  auto_orientation_v2: ^2.3.6 #屏幕方向
+  auto_orientation_v2: 2.3.7 #屏幕方向（2.4.x 依赖 AGP 9 / Gradle 9，当前工程不兼容）
   wakelock_plus: ^1.4.0 #屏幕常亮
   file_picker: ^10.3.7 #文件选择
   window_manager: ^0.5.1 #窗口管理
   floating: ^6.0.0 #PIP画中画
   flutter_inappwebview: ^6.1.5 #WebView
-  connectivity_plus: ^7.0.0 #网络状态
+  connectivity_plus: 7.0.0 #网络状态（7.3.x 的 iOS 26 SDK API 与当前 Xcode 不兼容）
   qr_code_scanner_plus: ^2.0.14 #二维码扫描
   volume_controller: ^3.4.0 #音量控制
 

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:floating/floating.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:lottie/lottie.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -482,9 +483,31 @@ class LiveRoomPage extends GetView<LiveRoomController> {
                           ),
                           padding: AppStyle.edgeInsetsA12,
                           itemCount: controller.messages.length,
-                          itemBuilder: (_, i) {
+                          itemBuilder: (context, i) {
                             var item = controller.messages[i];
-                            return buildMessageItem(item);
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onLongPressStart: (details) {
+                                if (Platform.isAndroid || Platform.isIOS) {
+                                  HapticFeedback.selectionClick();
+                                }
+                                _showMessageActions(
+                                  context,
+                                  item,
+                                  details.globalPosition,
+                                );
+                              },
+                              onSecondaryTapUp: Platform.isWindows ||
+                                      Platform.isLinux ||
+                                      Platform.isMacOS
+                                  ? (details) => _showMessageActions(
+                                        context,
+                                        item,
+                                        details.globalPosition,
+                                      )
+                                  : null,
+                              child: buildMessageItem(item),
+                            );
                           },
                         ),
                         Visibility(
@@ -516,6 +539,53 @@ class LiveRoomPage extends GetView<LiveRoomController> {
         ),
       ),
     );
+  }
+
+  /// 长按或右键聊天消息时弹出操作菜单
+  Future<void> _showMessageActions(
+    BuildContext context,
+    LiveMessage message,
+    Offset globalPosition,
+  ) async {
+    final overlay = Overlay.maybeOf(context);
+    final overlayBox = overlay?.context.findRenderObject() as RenderBox?;
+    if (overlay == null || overlayBox == null) {
+      return;
+    }
+    final local = overlayBox.globalToLocal(globalPosition);
+
+    controller.chatActionMenuVisible = true;
+    try {
+      final action = await showMenu<String>(
+        context: context,
+        position: RelativeRect.fromLTRB(
+          local.dx,
+          local.dy,
+          overlayBox.size.width - local.dx,
+          overlayBox.size.height - local.dy,
+        ),
+        items: const [
+          PopupMenuItem<String>(
+            value: "copy",
+            height: 40,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Remix.file_copy_line, size: 18),
+                AppStyle.hGap12,
+                Text("复制"),
+              ],
+            ),
+          ),
+        ],
+      );
+      if (action == "copy") {
+        Utils.copyToClipboard(message.message);
+      }
+    } finally {
+      controller.chatActionMenuVisible = false;
+      controller.chatScrollToBottom();
+    }
   }
 
   Widget buildMessageItem(LiveMessage message) {

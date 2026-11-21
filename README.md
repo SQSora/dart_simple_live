@@ -1,6 +1,3 @@
-> ### ⚠ 本项目不提供Release安装包，请自行编译后运行测试。
-
-
 <p align="center">
     <img width="128" src="/assets/logo.png" alt="Simple Live logo">
 </p>
@@ -10,39 +7,12 @@
 简简单单的看直播
 </p>
 
-![浅色模式](/assets/screenshot_light.jpg)
-
-![深色模式](/assets/screenshot_dark.jpg)
-
-## 支持直播平台：
-
-- 虎牙直播
-
-- 斗鱼直播
-
-- 哔哩哔哩直播
-
-- 抖音直播
-
-## APP支持平台
-
-- [x] Android
-- [x] iOS
-- [x] Windows `BETA`
-- [x] MacOS `BETA`
-- [x] Linux `BETA`
-- [x] Android TV `BETA`
-
 ## 项目结构
 
 - `simple_live_core` 项目核心库，实现获取各个网站的信息及弹幕。
 - `simple_live_console` 基于simple_live_core的控制台程序。
 - `simple_live_app` 基于核心库实现的Flutter APP客户端。
 - `simple_live_tv_app` 基于核心库实现的Flutter Android TV客户端。
-
-## 环境
-
-Flutter : `3.38`
 
 ## 参考及引用
 
@@ -71,13 +41,3 @@ Flutter : `3.38`
 本项目仅用于学习交流编程技术，严禁将本项目用于商业目的。如有任何商业行为，均与本项目无关。
 
 如果本项目存在侵犯您的合法权益的情况，请及时与开发者联系，开发者将会及时删除有关内容。
-
-## Star History
-
-<a href="https://www.star-history.com/#xiaoyaocz/dart_simple_live&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=xiaoyaocz/dart_simple_live&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=xiaoyaocz/dart_simple_live&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=xiaoyaocz/dart_simple_live&type=Date" />
- </picture>
-</a>

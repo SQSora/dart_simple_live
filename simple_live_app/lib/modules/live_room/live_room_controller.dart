@@ -78,6 +78,13 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
   var currentLineIndex = -1;
   var currentLineInfo = "".obs;
 
+  /// 斗鱼播放链接带 expire=300，CDN 会在到期后断开，需要提前换新链接
+  Timer? _playUrlRefreshTimer;
+  DateTime? _playUrlsIssuedAt;
+  int _playUrlRefreshRetryCount = 0;
+  int _playUrlGeneration = 0;
+  bool _isRefreshingPlayUrl = false;
+
   /// 退出倒计时
   var countdown = 60.obs;
 
@@ -91,6 +98,9 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
 
   /// 是否启用自动关闭
   var autoExitEnable = false.obs;
+
+  /// 聊天操作菜单是否打开；打开期间暂停自动滚动
+  bool chatActionMenuVisible = false;
 
   /// 是否禁用自动滚动聊天栏
   /// - 当用户向上滚动聊天栏时，不再自动滚动
@@ -185,6 +195,9 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
 
   /// 聊天栏始终滚动到底部
   void chatScrollToBottom() {
+    if (chatActionMenuVisible) {
+      return;
+    }
     if (scrollController.hasClients) {
       // 如果手动上拉过，就不自动滚动到底部
       if (disableAutoScroll.value) {
@@ -390,33 +403,43 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
   }
 
   void getPlayUrl() async {
+    _playUrlRefreshTimer?.cancel();
+    _playUrlGeneration += 1;
+    final generation = _playUrlGeneration;
     playUrls.clear();
     currentQualityInfo.value = qualites[currentQuality].quality;
     currentLineInfo.value = "";
     currentLineIndex = -1;
     var playUrl = await site.liveSite
         .getPlayUrls(detail: detail.value!, quality: qualites[currentQuality]);
+    if (generation != _playUrlGeneration || isClosed) {
+      return;
+    }
     if (playUrl.urls.isEmpty) {
       SmartDialog.showToast("无法读取播放地址");
       return;
     }
     playUrls.value = playUrl.urls;
     playHeaders = playUrl.headers;
+    _playUrlsIssuedAt = DateTime.now();
     currentLineIndex = 0;
     currentLineInfo.value = "线路${currentLineIndex + 1}";
     //重置错误次数
     mediaErrorRetryCount = 0;
+    _schedulePlayUrlRefresh();
     initPlaylist();
   }
 
   void changePlayLine(int index) {
+    _playUrlGeneration += 1;
     currentLineIndex = index;
     //重置错误次数
     mediaErrorRetryCount = 0;
     setPlayer();
+    _schedulePlayUrlRefresh();
   }
 
-  void initPlaylist() async {
+  Future<void> initPlaylist({bool? autoPlay}) async {
     currentLineInfo.value = "线路${currentLineIndex + 1}";
     errorMsg.value = "";
 
@@ -427,11 +450,16 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
       }
       return Media(finalUrl, httpHeaders: playHeaders);
     }).toList();
+    final lineIndex = currentLineIndex.clamp(0, mediaList.length - 1).toInt();
+    currentLineIndex = lineIndex;
 
     // 初始化播放器并设置 ao 参数
     await initializePlayer();
 
-    await player.open(Playlist(mediaList));
+    await player.open(
+      Playlist(mediaList, index: lineIndex),
+      play: autoPlay ?? true,
+    );
   }
 
   void setPlayer() async {
@@ -444,6 +472,14 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
   @override
   void mediaEnd() async {
     super.mediaEnd();
+    if (_isRefreshingPlayUrl) {
+      return;
+    }
+    if (_isCurrentPlayUrlExpired) {
+      Log.d("斗鱼播放地址已过期，重新获取");
+      _refreshDouyuPlayUrl(forcePlay: true);
+      return;
+    }
     if (mediaErrorRetryCount < 2) {
       Log.d("播放结束，尝试第${mediaErrorRetryCount + 1}次刷新");
       if (mediaErrorRetryCount == 1) {
@@ -471,6 +507,14 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
   @override
   void mediaError(String error) async {
     super.mediaEnd();
+    if (_isRefreshingPlayUrl) {
+      return;
+    }
+    if (_isCurrentPlayUrlExpired) {
+      Log.d("斗鱼播放地址已过期，重新获取");
+      _refreshDouyuPlayUrl(forcePlay: true);
+      return;
+    }
     if (mediaErrorRetryCount < 2) {
       Log.d("播放失败，尝试第${mediaErrorRetryCount + 1}次刷新");
       if (mediaErrorRetryCount == 1) {
@@ -490,6 +534,143 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
       //currentLineIndex += 1;
       //setPlayer();
       changePlayLine(currentLineIndex + 1);
+    }
+  }
+
+  /// 斗鱼播放链接带 expire=300，CDN 到期后会断开。提前换一条新链接，
+  /// 避免播放器只能拿过期链接反复重试。
+  void _schedulePlayUrlRefresh({bool retry = false}) {
+    _playUrlRefreshTimer?.cancel();
+    _playUrlRefreshTimer = null;
+
+    if (site.id != Constant.kDouyu ||
+        isClosed ||
+        playUrls.isEmpty ||
+        currentLineIndex < 0) {
+      return;
+    }
+
+    final index = currentLineIndex.clamp(0, playUrls.length - 1).toInt();
+    final expire = _playUrlExpireSeconds(playUrls[index]);
+    final issuedAt = _playUrlsIssuedAt;
+    if (expire == null || issuedAt == null) {
+      return;
+    }
+
+    if (!retry) {
+      _playUrlRefreshRetryCount = 0;
+    }
+
+    final leadSeconds = (expire ~/ 4).clamp(15, 75).toInt();
+    var delay = retry
+        ? const Duration(seconds: 15)
+        : Duration(seconds: expire - leadSeconds) -
+            DateTime.now().difference(issuedAt);
+    if (delay < const Duration(seconds: 3)) {
+      delay = const Duration(seconds: 3);
+    }
+
+    Log.d("斗鱼播放地址将在 ${delay.inSeconds} 秒后刷新");
+    _playUrlRefreshTimer = Timer(delay, () => _refreshDouyuPlayUrl());
+  }
+
+  int? _playUrlExpireSeconds(String url) {
+    final expire =
+        int.tryParse(Uri.tryParse(url)?.queryParameters["expire"] ?? "");
+    return expire != null && expire > 0 ? expire : null;
+  }
+
+  bool get _isCurrentPlayUrlExpired {
+    final issuedAt = _playUrlsIssuedAt;
+    if (site.id != Constant.kDouyu ||
+        issuedAt == null ||
+        playUrls.isEmpty ||
+        currentLineIndex < 0) {
+      return false;
+    }
+    final index = currentLineIndex.clamp(0, playUrls.length - 1).toInt();
+    final expire = _playUrlExpireSeconds(playUrls[index]);
+    return expire != null &&
+        DateTime.now().isAfter(issuedAt.add(Duration(seconds: expire)));
+  }
+
+  Future<void> _refreshDouyuPlayUrl({bool forcePlay = false}) async {
+    if (_isRefreshingPlayUrl ||
+        site.id != Constant.kDouyu ||
+        isClosed ||
+        detail.value == null ||
+        qualites.isEmpty ||
+        currentQuality < 0 ||
+        currentQuality >= qualites.length ||
+        playUrls.isEmpty ||
+        currentLineIndex < 0) {
+      return;
+    }
+
+    _playUrlRefreshTimer?.cancel();
+    _playUrlRefreshTimer = null;
+    _isRefreshingPlayUrl = true;
+    final generation = _playUrlGeneration;
+    final oldQuality = qualites[currentQuality];
+    final autoPlay =
+        forcePlay || player.state.playing || player.state.buffering;
+
+    try {
+      // 重新取房间信息，拿到新的签名和 CDN 列表
+      final freshDetail = await site.liveSite.getRoomDetail(roomId: roomId);
+      if (generation != _playUrlGeneration || isClosed) {
+        return;
+      }
+      final freshQualities =
+          await site.liveSite.getPlayQualites(detail: freshDetail);
+      if (generation != _playUrlGeneration || isClosed) {
+        return;
+      }
+      if (freshQualities.isEmpty) {
+        throw Exception("无法读取播放清晰度");
+      }
+
+      var qualityIndex = freshQualities
+          .indexWhere((item) => item.quality == oldQuality.quality);
+      if (qualityIndex < 0) {
+        qualityIndex =
+            currentQuality.clamp(0, freshQualities.length - 1).toInt();
+      }
+      final freshQuality = freshQualities[qualityIndex];
+
+      final playUrl = await site.liveSite.getPlayUrls(
+        detail: freshDetail,
+        quality: freshQuality,
+      );
+      if (generation != _playUrlGeneration || isClosed) {
+        return;
+      }
+      if (playUrl.urls.isEmpty) {
+        throw Exception("无法读取播放地址");
+      }
+
+      detail.value = freshDetail;
+      qualites.value = freshQualities;
+      currentQuality = qualityIndex;
+      currentQualityInfo.value = freshQuality.quality;
+      playUrls.value = playUrl.urls;
+      playHeaders = playUrl.headers;
+      _playUrlsIssuedAt = DateTime.now();
+      currentLineIndex = currentLineIndex.clamp(0, playUrls.length - 1).toInt();
+      currentLineInfo.value = "线路${currentLineIndex + 1}";
+      mediaErrorRetryCount = 0;
+
+      Log.d("斗鱼播放地址已刷新");
+      await initPlaylist(autoPlay: autoPlay);
+      _schedulePlayUrlRefresh();
+    } catch (e) {
+      Log.logPrint("刷新斗鱼播放地址失败: $e");
+      _playUrlRefreshRetryCount += 1;
+      if (_playUrlRefreshRetryCount <= 2 && !isClosed) {
+        _schedulePlayUrlRefresh(retry: true);
+      }
+    } finally {
+      _isRefreshingPlayUrl = false;
     }
   }
 
@@ -1056,6 +1237,8 @@ ${error?.stackTrace}''');
     WidgetsBinding.instance.removeObserver(this);
     scrollController.removeListener(scrollListener);
     autoExitTimer?.cancel();
+    _playUrlGeneration += 1;
+    _playUrlRefreshTimer?.cancel();
 
     liveDanmaku.stop();
     danmakuController = null;

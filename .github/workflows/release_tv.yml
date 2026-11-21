@@ -1,0 +1,219 @@
+name: Release TV
+
+on:
+  push:
+    tags:
+      - "tv_*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tv-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Prepare version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          full_version="$(sed -n 's/^version:[[:space:]]*//p' simple_live_tv_app/pubspec.yaml | tr -d '\r' | head -n 1)"
+          if [ -z "$full_version" ]; then
+            echo "::error::无法从 simple_live_tv_app/pubspec.yaml 解析 version 字段"
+            exit 1
+          fi
+          pubspec_version="${full_version%%+*}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#tv_}"
+            tag="$GITHUB_REF_NAME"
+            if [ "$version" != "$pubspec_version" ]; then
+              echo "::error::tag $tag 与 pubspec 版本 $pubspec_version 不一致，请先同步 version 字段"
+              exit 1
+            fi
+          else
+            version="$pubspec_version"
+            tag="tv_$version"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "pubspec 版本: $pubspec_version / 发布版本: $version / tag: $tag"
+
+  test:
+    name: Analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: simple_live_tv_app/.fvmrc
+          channel: stable
+          cache: true
+
+      - name: Normalize pub mirror
+        working-directory: simple_live_tv_app
+        run: |
+          if [ -f pubspec.lock ]; then
+            perl -pi -e 's#https://pub\.flutter-io\.cn#https://pub.dev#g' pubspec.lock
+          fi
+
+      - name: Install dependencies
+        working-directory: simple_live_tv_app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: simple_live_tv_app
+        run: flutter analyze
+
+  android:
+    name: Android TV APK
+    needs: [prepare, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: simple_live_tv_app/.fvmrc
+          channel: stable
+          cache: true
+
+      - name: Normalize pub mirror
+        working-directory: simple_live_tv_app
+        run: |
+          if [ -f pubspec.lock ]; then
+            perl -pi -e 's#https://pub\.flutter-io\.cn#https://pub.dev#g' pubspec.lock
+          fi
+
+      - name: Install dependencies
+        working-directory: simple_live_tv_app
+        run: flutter pub get
+
+      - name: Configure Android signing
+        env:
+          TV_KEYSTORE_BASE64: ${{ secrets.TV_KEYSTORE_BASE64 }}
+          TV_STORE_PASSWORD: ${{ secrets.TV_STORE_PASSWORD }}
+          TV_KEY_PASSWORD: ${{ secrets.TV_KEY_PASSWORD }}
+          TV_KEY_ALIAS: ${{ secrets.TV_KEY_ALIAS }}
+        shell: bash
+        run: |
+          : "${TV_KEYSTORE_BASE64:?TV_KEYSTORE_BASE64 未配置}"
+          : "${TV_STORE_PASSWORD:?TV_STORE_PASSWORD 未配置}"
+          : "${TV_KEY_PASSWORD:?TV_KEY_PASSWORD 未配置}"
+          : "${TV_KEY_ALIAS:?TV_KEY_ALIAS 未配置}"
+          printf '%s' "$TV_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/simple-live-tv-release.jks"
+          {
+            echo "storePassword=$TV_STORE_PASSWORD"
+            echo "keyPassword=$TV_KEY_PASSWORD"
+            echo "keyAlias=$TV_KEY_ALIAS"
+            echo "storeFile=$RUNNER_TEMP/simple-live-tv-release.jks"
+          } > simple_live_tv_app/android/key.properties
+
+      - name: Build release APKs
+        working-directory: simple_live_tv_app
+        run: flutter build apk --release --split-per-abi
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          version="${{ needs.prepare.outputs.version }}"
+          mkdir -p dist
+          cp simple_live_tv_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            "dist/SimpleLiveTV-$version-android-armeabi-v7a.apk"
+          cp simple_live_tv_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "dist/SimpleLiveTV-$version-android-arm64-v8a.apk"
+          cp simple_live_tv_app/build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            "dist/SimpleLiveTV-$version-android-x86_64.apk"
+          ls -lh dist
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android_tv
+          path: dist/*
+          retention-days: 3
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [prepare, android]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lhR dist
+
+      - name: Generate changelog
+        shell: bash
+        run: |
+          tag="${{ needs.prepare.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            target="$tag"
+          else
+            target="HEAD"
+          fi
+          previous_tag="$(git describe --tags --abbrev=0 --match 'tv_*' "$target^" 2>/dev/null || true)"
+          if [ -n "$previous_tag" ]; then
+            range="$previous_tag..$target"
+          else
+            range="$target"
+          fi
+          changes="$(git log "$range" --no-merges --pretty=format:'- %s (%h)')"
+          {
+            echo "## 更新日志"
+            echo
+            if [ -n "$changes" ]; then
+              printf '%s\n' "$changes"
+            else
+              echo "本次发布没有新的提交。"
+            fi
+          } > changelog.md
+          echo "previous_tag=${previous_tag:-<none>} / range=$range"
+          cat changelog.md
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Simple Live TV ${{ needs.prepare.outputs.version }}
+          body_path: changelog.md
+          prerelease: false
+          make_latest: false
+          files: dist/*
+          fail_on_unmatched_files: true
