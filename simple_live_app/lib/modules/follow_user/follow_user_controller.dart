@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
+import 'package:simple_live_app/app/controller/app_settings_controller.dart';
 import 'package:simple_live_app/app/controller/base_controller.dart';
 import 'package:simple_live_app/app/event_bus.dart';
 import 'package:simple_live_app/app/log.dart';
@@ -76,6 +77,15 @@ class FollowUserController extends BasePageController<FollowUser> {
         tagList.add(i);
       }
     }
+  }
+
+  bool get sortByWatchCount =>
+      AppSettingsController.instance.followSortByWatchCount.value;
+
+  void toggleSortByWatchCount() {
+    AppSettingsController.instance
+        .setFollowSortByWatchCount(!sortByWatchCount);
+    FollowService.instance.filterData();
   }
 
   void filterData() {
@@ -184,7 +194,6 @@ class FollowUserController extends BasePageController<FollowUser> {
 
   // 调整标签顺序
   void updateTagOrder(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex -= 1; // 处理索引调整
     final item = userTagList.removeAt(oldIndex);
     userTagList.insert(newIndex, item);
     tagList.value = tagList.take(3).toList();

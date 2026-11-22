@@ -147,6 +147,9 @@ class AppSettingsController extends GetxController {
     autoUpdateFollowEnable.value = LocalStorageService.instance
         .getValue(LocalStorageService.kAutoUpdateFollowEnable, true);
 
+    followSortByWatchCount.value = LocalStorageService.instance
+        .getValue(LocalStorageService.kFollowSortByWatchCount, false);
+
     autoUpdateFollowDuration.value = LocalStorageService.instance
         .getValue(LocalStorageService.kUpdateFollowDuration, 10);
 
@@ -509,6 +512,13 @@ class AppSettingsController extends GetxController {
     autoUpdateFollowEnable.value = e;
     LocalStorageService.instance
         .setValue(LocalStorageService.kAutoUpdateFollowEnable, e);
+  }
+
+  var followSortByWatchCount = false.obs;
+  void setFollowSortByWatchCount(bool e) {
+    followSortByWatchCount.value = e;
+    LocalStorageService.instance
+        .setValue(LocalStorageService.kFollowSortByWatchCount, e);
   }
 
   var autoUpdateFollowDuration = 10.obs;

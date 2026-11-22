@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:remixicon/remixicon.dart';
 import 'package:simple_live_app/app/app_style.dart';
+import 'package:simple_live_app/app/controller/app_settings_controller.dart';
 import 'package:simple_live_app/app/log.dart';
 import 'package:simple_live_app/app/sites.dart';
 import 'package:simple_live_app/models/db/follow_user.dart';
@@ -59,7 +60,7 @@ class FollowUserItem extends StatelessWidget {
                       ),
                       AppStyle.hGap4,
                       Text(
-                        getStatus(item.liveStatus.value),
+                        getStatusText(item),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.normal,
@@ -77,6 +78,7 @@ class FollowUserItem extends StatelessWidget {
       ),
       subtitle: Wrap(
         runSpacing: 1.0,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Image.asset(
             site.logo,
@@ -102,18 +104,32 @@ class FollowUserItem extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-            )
-          else if (item.liveStatus.value == 2 && item.liveStartTime != null)
-            Padding(
-              padding: AppStyle.edgeInsetsL8,
-              child: Text(
-                '开播了${formatLiveDuration(item.liveStartTime)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
-              ),
             ),
+          Obx(
+            () => AppSettingsController.instance.followSortByWatchCount.value
+                ? Padding(
+                    padding: AppStyle.edgeInsetsL8,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Remix.eye_line,
+                          size: 14,
+                          color: Colors.grey,
+                        ),
+                        AppStyle.hGap4,
+                        Text(
+                          '${item.watchCount}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
       trailing: playing
@@ -148,6 +164,16 @@ class FollowUserItem extends StatelessWidget {
     }
   }
 
+  String getStatusText(FollowUser item) {
+    if (item.liveStatus.value == 2) {
+      var duration = formatLiveDuration(item.liveStartTime);
+      if (duration.isNotEmpty) {
+        return duration;
+      }
+    }
+    return getStatus(item.liveStatus.value);
+  }
+
   String formatLiveDuration(String? startTimeStampString) {
     if (startTimeStampString == null ||
         startTimeStampString.isEmpty ||
@@ -166,13 +192,13 @@ class FollowUserItem extends StatelessWidget {
       String minuteText = minutes > 0 ? '$minutes分钟' : '';
 
       if (hours == 0 && minutes == 0) {
-        return "不足1分钟";
+        return "刚刚";
       }
 
       return '$hourText$minuteText';
     } catch (e) {
       Log.logPrint('格式化开播时长出错: $e');
-      return "--小时--分钟";
+      return "格式错误";
     }
   }
 }

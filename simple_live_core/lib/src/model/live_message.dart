@@ -86,6 +86,7 @@ class LiveMessageColor {
 }
 
 class LiveSuperChatMessage {
+  final String id;
   final String userName;
   final String face;
   final String message;
@@ -95,6 +96,7 @@ class LiveSuperChatMessage {
   final String backgroundColor;
   final String backgroundBottomColor;
   LiveSuperChatMessage({
+    required this.id,
     required this.backgroundBottomColor,
     required this.backgroundColor,
     required this.endTime,
@@ -105,9 +107,23 @@ class LiveSuperChatMessage {
     required this.userName,
   });
 
+  /// 判断是否为同一条 SC。
+  /// 优先使用平台提供的 id；缺少 id 时按内容和时间兜底。
+  bool sameAs(LiveSuperChatMessage other) {
+    if (id.isNotEmpty && other.id.isNotEmpty) {
+      return id == other.id;
+    }
+    return userName == other.userName &&
+        startTime == other.startTime &&
+        endTime == other.endTime &&
+        price == other.price &&
+        message == other.message;
+  }
+
   @override
   String toString() {
     return json.encode({
+      "id": id,
       "userName": userName,
       "face": face,
       "message": message,

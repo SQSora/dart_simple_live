@@ -26,8 +26,8 @@ class FollowUserPage extends GetView<FollowUserController> {
         actions: [
           PopupMenuButton(
             itemBuilder: (context) {
-              return const [
-                PopupMenuItem(
+              return <PopupMenuEntry<dynamic>>[
+                const PopupMenuItem(
                   value: 0,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -38,7 +38,7 @@ class FollowUserPage extends GetView<FollowUserController> {
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 1,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -49,7 +49,7 @@ class FollowUserPage extends GetView<FollowUserController> {
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 2,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -60,7 +60,7 @@ class FollowUserPage extends GetView<FollowUserController> {
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 3,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -71,7 +71,7 @@ class FollowUserPage extends GetView<FollowUserController> {
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 4,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -79,6 +79,22 @@ class FollowUserPage extends GetView<FollowUserController> {
                       Icon(Remix.price_tag_line),
                       AppStyle.hGap12,
                       Text("标签管理"),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 5,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        controller.sortByWatchCount
+                            ? Remix.checkbox_circle_fill
+                            : Remix.checkbox_blank_circle_line,
+                      ),
+                      AppStyle.hGap12,
+                      const Text("按观看次数排序"),
                     ],
                   ),
                 ),
@@ -95,6 +111,8 @@ class FollowUserPage extends GetView<FollowUserController> {
                 FollowService.instance.inputText();
               } else if (value == 4) {
                 showTagsManager();
+              } else if (value == 5) {
+                controller.toggleSortByWatchCount();
               }
             },
           ),
@@ -311,7 +329,7 @@ class FollowUserPage extends GetView<FollowUserController> {
                       ),
                     );
                   },
-                  onReorder: (int oldIndex, int newIndex) {
+                  onReorderItem: (int oldIndex, int newIndex) {
                     controller.updateTagOrder(oldIndex, newIndex);
                   },
                 ),

@@ -210,6 +210,7 @@ class BiliBiliDanmaku implements LiveDanmaku {
           return;
         }
         LiveSuperChatMessage sc = LiveSuperChatMessage(
+          id: obj["data"]["id"]?.toString() ?? "",
           backgroundBottomColor:
               obj["data"]["background_bottom_color"].toString(),
           backgroundColor: obj["data"]["background_color"].toString(),

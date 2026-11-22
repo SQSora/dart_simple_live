@@ -109,11 +109,12 @@ class Utils {
   }
 
   static void showRightDialog({
-    required String title,
+    String title = "",
     Function()? onDismiss,
     required Widget child,
     double width = 320,
     bool useSystem = false,
+    bool showHeader = true,
   }) {
     SmartDialog.show(
       alignment: Alignment.topRight,
@@ -147,26 +148,28 @@ class Utils {
             data: const MediaQueryData(padding: EdgeInsets.zero),
             child: Column(
               children: [
-                ListTile(
-                  visualDensity: VisualDensity.compact,
-                  contentPadding: EdgeInsets.zero,
-                  leading: IconButton(
-                    onPressed: () {
-                      SmartDialog.dismiss(status: SmartStatus.allCustom).then(
-                        (value) => onDismiss?.call(),
-                      );
-                    },
-                    icon: const Icon(Icons.arrow_back),
+                if (showHeader) ...[
+                  ListTile(
+                    visualDensity: VisualDensity.compact,
+                    contentPadding: EdgeInsets.zero,
+                    leading: IconButton(
+                      onPressed: () {
+                        SmartDialog.dismiss(status: SmartStatus.allCustom).then(
+                          (value) => onDismiss?.call(),
+                        );
+                      },
+                      icon: const Icon(Icons.arrow_back),
+                    ),
+                    title: Text(
+                      title,
+                      style: Get.textTheme.titleMedium,
+                    ),
                   ),
-                  title: Text(
-                    title,
-                    style: Get.textTheme.titleMedium,
+                  Divider(
+                    height: 1,
+                    color: Colors.grey.withAlpha(25),
                   ),
-                ),
-                Divider(
-                  height: 1,
-                  color: Colors.grey.withAlpha(25),
-                ),
+                ],
                 Expanded(
                   child: child,
                 ),
@@ -183,9 +186,10 @@ class Utils {
   }
 
   static Future showBottomSheet({
-    required String title,
+    String title = "",
     required Widget child,
     double maxWidth = 600,
+    bool showHeader = true,
   }) async {
     var result = await showModalBottomSheet(
       context: Get.context!,
@@ -200,16 +204,17 @@ class Utils {
       ),
       builder: (_) => Column(
         children: [
-          ListTile(
-            contentPadding: const EdgeInsets.only(
-              left: 12,
+          if (showHeader)
+            ListTile(
+              contentPadding: const EdgeInsets.only(
+                left: 12,
+              ),
+              title: Text(title),
+              trailing: IconButton(
+                onPressed: Get.back,
+                icon: const Icon(Remix.close_line),
+              ),
             ),
-            title: Text(title),
-            trailing: IconButton(
-              onPressed: Get.back,
-              icon: const Icon(Remix.close_line),
-            ),
-          ),
           Expanded(
             child: child,
           ),

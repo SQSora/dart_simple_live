@@ -7,13 +7,10 @@ import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:remixicon/remixicon.dart';
 import 'package:simple_live_app/app/app_style.dart';
 import 'package:simple_live_app/app/controller/app_settings_controller.dart';
-import 'package:simple_live_app/app/sites.dart';
 import 'package:simple_live_app/app/utils.dart';
 import 'package:simple_live_app/modules/live_room/live_room_controller.dart';
+import 'package:simple_live_app/modules/live_room/widgets/room_switch_panel.dart';
 import 'package:simple_live_app/modules/settings/danmu_settings_page.dart';
-import 'package:simple_live_app/services/follow_service.dart';
-import 'package:simple_live_app/widgets/desktop_refresh_button.dart';
-import 'package:simple_live_app/widgets/follow_user_item.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:simple_live_app/widgets/superchat_card.dart';
 import 'dart:async';
@@ -85,7 +82,7 @@ Widget buildFullControls(
               if (controller.lockControlsState.value) {
                 return;
               }
-              showFollowUser(controller);
+              showRoomSwitchPanel(controller);
             },
             onVerticalDragStart: controller.onVerticalDragStart,
             onVerticalDragUpdate: controller.onVerticalDragUpdate,
@@ -178,7 +175,7 @@ Widget buildFullControls(
                   ),
                   IconButton(
                     onPressed: () {
-                      showFollowUser(controller);
+                      showRoomSwitchPanel(controller);
                     },
                     icon: const Icon(
                       Remix.play_list_2_line,
@@ -846,55 +843,25 @@ void showPlayerSettings(LiveRoomController controller) {
   );
 }
 
-void showFollowUser(LiveRoomController controller) {
+void showRoomSwitchPanel(LiveRoomController controller) {
   if (controller.isVertical.value) {
-    controller.showFollowUserSheet();
+    Utils.showBottomSheet(
+      showHeader: false,
+      child: RoomSwitchPanel(
+        controller: controller,
+        onClose: () => Get.back(),
+      ),
+    );
     return;
   }
 
   Utils.showRightDialog(
-    title: "关注列表",
     width: 400,
     useSystem: true,
-    child: Obx(
-      () => Stack(
-        children: [
-          RefreshIndicator(
-            onRefresh: FollowService.instance.loadData,
-            child: ListView.builder(
-              itemCount: FollowService.instance.liveList.length,
-              itemBuilder: (_, i) {
-                var item = FollowService.instance.liveList[i];
-                return Obx(
-                  () => FollowUserItem(
-                    item: item,
-                    playing: controller.rxSite.value.id == item.siteId &&
-                        controller.rxRoomId.value == item.roomId,
-                    onTap: () {
-                      Utils.hideRightDialog();
-                      controller.resetRoom(
-                        Sites.allSites[item.siteId]!,
-                        item.roomId,
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-          if (Platform.isLinux || Platform.isWindows || Platform.isMacOS)
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: Obx(
-                () => DesktopRefreshButton(
-                  refreshing: FollowService.instance.updating.value,
-                  onPressed: FollowService.instance.loadData,
-                ),
-              ),
-            ),
-        ],
-      ),
+    showHeader: false,
+    child: RoomSwitchPanel(
+      controller: controller,
+      onClose: Utils.hideRightDialog,
     ),
   );
 }
@@ -972,7 +939,7 @@ class _PlayerSuperChatOverlayState extends State<PlayerSuperChatOverlay> {
   late Worker _worker;
 
   void _addSC(LiveSuperChatMessage sc, {int? customSeconds}) {
-    if (_displayed.any((e) => e.sc == sc)) return;
+    if (_displayed.any((e) => e.sc.sameAs(sc))) return;
     int showSeconds = customSeconds ?? 15;
     final expireAt = DateTime.now().add(Duration(seconds: showSeconds));
     final localSC = LocalDisplaySC(sc, expireAt, showSeconds);
@@ -1002,12 +969,14 @@ class _PlayerSuperChatOverlayState extends State<PlayerSuperChatOverlay> {
         ever<List<LiveSuperChatMessage>>(widget.controller.superChats, (list) {
       // 新增
       for (var sc in list) {
-        if (!_displayed.any((e) => e.sc == sc)) {
+        if (!_displayed.any((e) => e.sc.sameAs(sc))) {
           _addSC(sc);
         }
       }
       // 移除
-      _displayed.removeWhere((e) => !list.contains(e.sc));
+      _displayed.removeWhere(
+        (e) => !list.any((sc) => e.sc.sameAs(sc)),
+      );
       setState(() {});
     });
   }

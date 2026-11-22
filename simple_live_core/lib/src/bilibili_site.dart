@@ -410,6 +410,7 @@ class BiliBiliSite implements LiveSite {
     List<LiveSuperChatMessage> ls = [];
     for (var item in result["data"]?["list"] ?? []) {
       var message = LiveSuperChatMessage(
+        id: item["id"]?.toString() ?? "",
         backgroundBottomColor: item["background_bottom_color"].toString(),
         backgroundColor: item["background_color"].toString(),
         endTime: DateTime.fromMillisecondsSinceEpoch(

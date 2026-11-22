@@ -22,8 +22,6 @@ import 'package:simple_live_app/modules/live_room/player/player_controller.dart'
 import 'package:simple_live_app/modules/settings/danmu_settings_page.dart';
 import 'package:simple_live_app/services/db_service.dart';
 import 'package:simple_live_app/services/follow_service.dart';
-import 'package:simple_live_app/widgets/desktop_refresh_button.dart';
-import 'package:simple_live_app/widgets/follow_user_item.dart';
 import 'package:simple_live_core/simple_live_core.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -55,6 +53,9 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
   var followed = false.obs;
   var liveStatus = false.obs;
   RxList<LiveSuperChatMessage> superChats = RxList<LiveSuperChatMessage>();
+
+  /// 当前控制器已计数的关注直播间 id，避免刷新时重复计数
+  String? _lastCountedFollowId;
 
   /// 滚动控制
   final ScrollController scrollController = ScrollController();
@@ -264,7 +265,7 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
     } else if (msg.type == LiveMessageType.online) {
       online.value = msg.data;
     } else if (msg.type == LiveMessageType.superChat) {
-      superChats.add(msg.data);
+      _addSuperChat(msg.data);
     }
   }
 
@@ -308,16 +309,23 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
           var oldId = roomId;
           rxRoomId.value = detail.value!.roomId;
           if (followed.value) {
-            // 更新关注列表
-            DBService.instance.deleteFollow("${site.id}_$oldId");
-            DBService.instance.addFollow(
+            // 更新关注列表，保留关注时间、标签和观看次数
+            var oldFollowId = "${site.id}_$oldId";
+            var newFollowId = "${site.id}_$roomId";
+            var oldFollow = DBService.instance
+                .getFollowList()
+                .firstWhereOrNull((e) => e.id == oldFollowId);
+            await DBService.instance.deleteFollow(oldFollowId);
+            await DBService.instance.addFollow(
               FollowUser(
-                id: "${site.id}_$roomId",
+                id: newFollowId,
                 roomId: roomId,
                 siteId: site.id,
                 userName: detail.value!.userName,
                 face: detail.value!.userAvatar,
-                addTime: DateTime.now(),
+                addTime: oldFollow?.addTime ?? DateTime.now(),
+                tag: oldFollow?.tag ?? "全部",
+                watchCount: oldFollow?.watchCount ?? 0,
               ),
             );
           } else {
@@ -331,7 +339,28 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
 
       addHistory();
       // 确认房间关注状态
-      followed.value = DBService.instance.getFollowExist("${site.id}_$roomId");
+      var followId = "${site.id}_$roomId";
+      followed.value = DBService.instance.getFollowExist(followId);
+      if (followed.value) {
+        try {
+          await FollowService.instance.syncFollowUserInfo(
+            followId,
+            userName: detail.value?.userName,
+            face: detail.value?.userAvatar,
+          );
+        } catch (e) {
+          // 资料同步失败不应影响直播间正常加载
+          Log.logPrint("同步关注信息失败: $e");
+        }
+        if (_lastCountedFollowId != followId) {
+          _lastCountedFollowId = followId;
+          try {
+            await FollowService.instance.incrementWatchCount(followId);
+          } catch (e) {
+            Log.logPrint("更新观看次数失败: $e");
+          }
+        }
+      }
       online.value = detail.value!.online;
       liveStatus.value = detail.value!.status || detail.value!.isRecord;
       if (liveStatus.value) {
@@ -679,11 +708,21 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
     try {
       var sc =
           await site.liveSite.getSuperChatMessage(roomId: detail.value!.roomId);
-      superChats.addAll(sc);
+      for (var item in sc) {
+        _addSuperChat(item);
+      }
     } catch (e) {
       Log.logPrint(e);
       addSysMsg("SC读取失败");
     }
+  }
+
+  /// 添加SC，按稳定标识去重，避免接口和弹幕推送重复入列
+  void _addSuperChat(LiveSuperChatMessage sc) {
+    if (superChats.any((e) => e.sameAs(sc))) {
+      return;
+    }
+    superChats.add(sc);
   }
 
   /// 移除掉已到期的SC
@@ -1003,52 +1042,6 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void showFollowUserSheet() {
-    Utils.showBottomSheet(
-      title: "关注列表",
-      child: Obx(
-        () => Stack(
-          children: [
-            RefreshIndicator(
-              onRefresh: FollowService.instance.loadData,
-              child: ListView.builder(
-                itemCount: FollowService.instance.liveList.length,
-                itemBuilder: (_, i) {
-                  var item = FollowService.instance.liveList[i];
-                  return Obx(
-                    () => FollowUserItem(
-                      item: item,
-                      playing: rxSite.value.id == item.siteId &&
-                          rxRoomId.value == item.roomId,
-                      onTap: () {
-                        Get.back();
-                        resetRoom(
-                          Sites.allSites[item.siteId]!,
-                          item.roomId,
-                        );
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
-            if (Platform.isLinux || Platform.isWindows || Platform.isMacOS)
-              Positioned(
-                right: 12,
-                bottom: 12,
-                child: Obx(
-                  () => DesktopRefreshButton(
-                    refreshing: FollowService.instance.updating.value,
-                    onPressed: FollowService.instance.loadData,
-                  ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

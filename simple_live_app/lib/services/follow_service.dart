@@ -111,13 +111,116 @@ class FollowService extends GetxService {
     }
     // 标签内排序
     curTagFollowList.sort(
-      (a, b) => b.liveStatus.value.compareTo(a.liveStatus.value),
+      (a, b) => compareFollowUser(a, b, byWatchCount: _sortByWatchCount),
     );
+  }
+
+  bool get _sortByWatchCount =>
+      Get.isRegistered<AppSettingsController>() &&
+      AppSettingsController.instance.followSortByWatchCount.value;
+
+  /// 关注列表排序：先按直播状态降序；
+  /// 开启观看次数排序时再按个人观看次数降序；
+  /// 最后按添加关注时间降序。
+  static int compareFollowUser(
+    FollowUser a,
+    FollowUser b, {
+    bool byWatchCount = false,
+  }) {
+    var status = b.liveStatus.value.compareTo(a.liveStatus.value);
+    if (status != 0) {
+      return status;
+    }
+    if (byWatchCount) {
+      var count = b.watchCount.compareTo(a.watchCount);
+      if (count != 0) {
+        return count;
+      }
+    }
+    return b.addTime.compareTo(a.addTime);
   }
 
   // 添加关注
   Future<void> addFollow(FollowUser follow) async {
     await DBService.instance.addFollow(follow);
+  }
+
+  /// 用直播间的最新资料同步关注列表中的昵称和头像。
+  /// 空值不会覆盖已有资料，字段没有变化时不会写库。
+  Future<void> syncFollowUserInfo(
+    String id, {
+    String? userName,
+    String? face,
+  }) async {
+    var newName = userName?.trim() ?? "";
+    var newFace = face?.trim() ?? "";
+    if (newName.isEmpty && newFace.isEmpty) {
+      return;
+    }
+
+    var follow = _findFollowUser(id);
+    if (follow == null) {
+      return;
+    }
+
+    var changed = follow.updateProfile(userName: newName, face: newFace);
+    // 各列表可能持有不同的 FollowUser 实例，需要一起更新
+    for (var list in _followLists) {
+      var item = list.firstWhereOrNull((e) => e.id == id);
+      if (item != null && !identical(item, follow)) {
+        changed =
+            item.updateProfile(userName: newName, face: newFace) || changed;
+      }
+    }
+    if (!changed) {
+      return;
+    }
+
+    await DBService.instance.addFollow(follow);
+    _notifyFollowListsChanged();
+  }
+
+  /// 个人观看次数 +1，并同步所有列表实例
+  Future<void> incrementWatchCount(String id) async {
+    var follow = _findFollowUser(id);
+    if (follow == null) {
+      return;
+    }
+
+    follow.watchCount += 1;
+    for (var list in _followLists) {
+      var item = list.firstWhereOrNull((e) => e.id == id);
+      if (item != null && !identical(item, follow)) {
+        item.watchCount += 1;
+      }
+    }
+
+    await DBService.instance.addFollow(follow);
+    filterData();
+  }
+
+  List<RxList<FollowUser>> get _followLists => [
+        followList,
+        liveList,
+        notLiveList,
+        curTagFollowList,
+      ];
+
+  FollowUser? _findFollowUser(String id) {
+    for (var list in _followLists) {
+      var follow = list.firstWhereOrNull((e) => e.id == id);
+      if (follow != null) {
+        return follow;
+      }
+    }
+    return DBService.instance.getFollowList().firstWhereOrNull((e) => e.id == id);
+  }
+
+  void _notifyFollowListsChanged() {
+    for (var list in _followLists) {
+      list.refresh();
+    }
+    _updatedListController.add(0);
   }
 
   void initTimer() {
@@ -232,6 +335,13 @@ class FollowService extends GetxService {
         // 只有正在直播时才查详细信息
         var detail = await site.liveSite.getRoomDetail(roomId: item.roomId);
         item.liveStartTime = detail.showTime;
+        // 顺带把关注列表的主播资料更新为直播间最新信息
+        if (item.updateProfile(
+          userName: detail.userName,
+          face: detail.userAvatar,
+        )) {
+          await DBService.instance.addFollow(item);
+        }
       } else {
         item.liveStartTime = null;
       }
@@ -249,7 +359,9 @@ class FollowService extends GetxService {
   }
 
   void filterData() {
-    followList.sort((a, b) => b.liveStatus.value.compareTo(a.liveStatus.value));
+    followList.sort(
+      (a, b) => compareFollowUser(a, b, byWatchCount: _sortByWatchCount),
+    );
     liveList.assignAll(followList.where((x) => x.liveStatus.value == 2));
     notLiveList.assignAll(followList.where((x) => x.liveStatus.value == 1));
     _updatedListController.add(0);
@@ -412,7 +524,8 @@ class FollowService extends GetxService {
             "userName": item.userName,
             "face": item.face,
             "addTime": item.addTime.toString(),
-            "tag": item.tag
+            "tag": item.tag,
+            "watchCount": item.watchCount,
           },
         )
         .toList();
