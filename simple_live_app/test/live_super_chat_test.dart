@@ -22,6 +22,32 @@ void main() {
         userName: userName,
       );
 
+  group('LiveSuperChatMessage.dedupKey', () {
+    test('优先使用平台 id，内容变化不影响标识', () {
+      var a = createSuperChat(id: 'sc-1', message: 'A');
+      var b = createSuperChat(id: 'sc-1', message: 'B');
+      expect(a.dedupKey, b.dedupKey);
+    });
+
+    test('缺少 id 时按内容、时间和价格生成相同标识', () {
+      var a = createSuperChat();
+      var b = createSuperChat();
+      expect(a.dedupKey, b.dedupKey);
+    });
+
+    test('缺少 id 且内容不同生成不同标识', () {
+      var a = createSuperChat(message: 'A');
+      var b = createSuperChat(message: 'B');
+      expect(a.dedupKey, isNot(b.dedupKey));
+    });
+
+    test('缺少 id 且价格不同生成不同标识', () {
+      var a = createSuperChat(price: 30);
+      var b = createSuperChat(price: 50);
+      expect(a.dedupKey, isNot(b.dedupKey));
+    });
+  });
+
   group('LiveSuperChatMessage.sameAs', () {
     test('相同 id 视为同一条 SC', () {
       var a = createSuperChat(id: 'sc-1', message: 'A');

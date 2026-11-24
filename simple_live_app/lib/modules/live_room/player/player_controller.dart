@@ -229,6 +229,32 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
   final pip = Floating();
   StreamSubscription<PiPStatus>? _pipSubscription;
 
+  /// Android 系统版本，仅查询一次
+  int? _androidSdkInt;
+
+  /// 恢复系统状态栏和导航栏。
+  ///
+  /// Android 9 及以下不支持 [SystemUiMode.edgeToEdge]，
+  /// 直接切换会导致隐藏状态栏的 flags 一直保留。
+  Future<void> restoreSystemUI() async {
+    if (!(Platform.isAndroid || Platform.isIOS)) {
+      return;
+    }
+
+    if (Platform.isAndroid) {
+      _androidSdkInt ??= (await deviceInfo.androidInfo).version.sdkInt;
+      if ((_androidSdkInt ?? 0) < 29) {
+        await SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.manual,
+          overlays: SystemUiOverlay.values,
+        );
+        return;
+      }
+    }
+
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
   //final VolumeController volumeController = VolumeController();
 
   /// 初始化一些系统状态
@@ -253,10 +279,7 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
   Future resetSystem() async {
     _pipSubscription?.cancel();
     //pip.dispose();
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.edgeToEdge,
-      overlays: SystemUiOverlay.values,
-    );
+    await restoreSystemUI();
 
     await setPortraitOrientation();
     if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
@@ -288,15 +311,14 @@ mixin PlayerSystemMixin on PlayerMixin, PlayerStateMixin, PlayerDanmakuMixin {
   }
 
   /// 退出全屏
-  void exitFull() {
+  Future<void> exitFull() async {
+    fullScreenState.value = false;
     if (Platform.isAndroid || Platform.isIOS) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge,
-          overlays: SystemUiOverlay.values);
-      setPortraitOrientation();
+      await restoreSystemUI();
+      await setPortraitOrientation();
     } else {
       windowManager.setFullScreen(false);
     }
-    fullScreenState.value = false;
 
     //danmakuController?.clear();
   }

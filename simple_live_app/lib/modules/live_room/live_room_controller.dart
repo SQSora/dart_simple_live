@@ -54,6 +54,9 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
   var liveStatus = false.obs;
   RxList<LiveSuperChatMessage> superChats = RxList<LiveSuperChatMessage>();
 
+  /// 当前直播间已经展示过的 SC，避免浮层重建或列表变化时重播
+  final Set<String> _shownSuperChatKeys = {};
+
   /// 当前控制器已计数的关注直播间 id，避免刷新时重复计数
   String? _lastCountedFollowId;
 
@@ -719,15 +722,29 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
 
   /// 添加SC，按稳定标识去重，避免接口和弹幕推送重复入列
   void _addSuperChat(LiveSuperChatMessage sc) {
+    if (sc.endTime.millisecondsSinceEpoch <=
+        DateTime.now().millisecondsSinceEpoch) {
+      return;
+    }
     if (superChats.any((e) => e.sameAs(sc))) {
       return;
     }
     superChats.add(sc);
   }
 
+  /// 标记 SC 已在浮层展示过；返回 false 表示此前已经展示
+  bool markSuperChatShown(LiveSuperChatMessage sc) {
+    return _shownSuperChatKeys.add(sc.dedupKey);
+  }
+
   /// 移除掉已到期的SC
   void removeSuperChats() async {
     var now = DateTime.now().millisecondsSinceEpoch;
+    var expiredKeys = superChats
+        .where((x) => x.endTime.millisecondsSinceEpoch <= now)
+        .map((x) => x.dedupKey)
+        .toSet();
+    _shownSuperChatKeys.removeAll(expiredKeys);
     superChats.value = superChats
         .where((x) => x.endTime.millisecondsSinceEpoch > now)
         .toList();
@@ -1155,6 +1172,7 @@ class LiveRoomController extends PlayerController with WidgetsBindingObserver {
     liveDanmaku.stop();
     messages.clear();
     superChats.clear();
+    _shownSuperChatKeys.clear();
     danmakuController?.clear();
 
     // 重新设置LiveDanmaku
@@ -1237,6 +1255,7 @@ ${error?.stackTrace}''');
 
     liveDanmaku.stop();
     danmakuController = null;
+    _shownSuperChatKeys.clear();
     _liveDurationTimer?.cancel(); // 页面关闭时取消定时器
     super.onClose();
   }

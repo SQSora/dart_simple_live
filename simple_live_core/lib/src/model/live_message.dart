@@ -107,17 +107,20 @@ class LiveSuperChatMessage {
     required this.userName,
   });
 
+  /// 缺少平台 id 时用于兜底判重的内容标识。
+  String get _contentKey =>
+      '$userName|${startTime.millisecondsSinceEpoch}|${endTime.millisecondsSinceEpoch}|$price|$message';
+
+  /// 展示用稳定标识，优先使用平台 id。
+  String get dedupKey => id.isNotEmpty ? id : _contentKey;
+
   /// 判断是否为同一条 SC。
   /// 优先使用平台提供的 id；缺少 id 时按内容和时间兜底。
   bool sameAs(LiveSuperChatMessage other) {
     if (id.isNotEmpty && other.id.isNotEmpty) {
       return id == other.id;
     }
-    return userName == other.userName &&
-        startTime == other.startTime &&
-        endTime == other.endTime &&
-        price == other.price &&
-        message == other.message;
+    return _contentKey == other._contentKey;
   }
 
   @override

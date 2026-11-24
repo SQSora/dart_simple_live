@@ -953,6 +953,14 @@ class _PlayerSuperChatOverlayState extends State<PlayerSuperChatOverlay> {
     setState(() {});
   }
 
+  /// 只在 SC 第一次进入浮层时展示，避免列表变化把已消失的旧 SC 重新加回来
+  void _showSC(LiveSuperChatMessage sc, {int? customSeconds}) {
+    if (!widget.controller.markSuperChatShown(sc)) {
+      return;
+    }
+    _addSC(sc, customSeconds: customSeconds);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -961,7 +969,7 @@ class _PlayerSuperChatOverlayState extends State<PlayerSuperChatOverlay> {
     for (var sc in widget.controller.superChats) {
       int remain = (sc.endTime.millisecondsSinceEpoch - now) ~/ 1000;
       if (remain > 0) {
-        _addSC(sc, customSeconds: remain < 15 ? remain : 15);
+        _showSC(sc, customSeconds: remain < 15 ? remain : 15);
       }
     }
     // 监听SC列表变化
@@ -969,9 +977,10 @@ class _PlayerSuperChatOverlayState extends State<PlayerSuperChatOverlay> {
         ever<List<LiveSuperChatMessage>>(widget.controller.superChats, (list) {
       // 新增
       for (var sc in list) {
-        if (!_displayed.any((e) => e.sc.sameAs(sc))) {
-          _addSC(sc);
+        if (_displayed.any((e) => e.sc.sameAs(sc))) {
+          continue;
         }
+        _showSC(sc);
       }
       // 移除
       _displayed.removeWhere(
